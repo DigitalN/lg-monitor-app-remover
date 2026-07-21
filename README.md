@@ -47,9 +47,26 @@ policy that would otherwise re‑fetch it.
 
 ---
 
+## Download
+
+[**⬇ Download the latest release**](https://github.com/samuelcon41/lg-monitor-app-remover/releases/latest) — grab `Remove-LGMonitorAdware.ps1` from the **Assets** list.
+
+Other ways to get it:
+
+- **Whole repo:** green **Code** button → **Download ZIP**.
+- **Just the script:** open [`Remove-LGMonitorAdware.ps1`](Remove-LGMonitorAdware.ps1) and click the **Download raw file** icon (top-right of the file view).
+- **From PowerShell:**
+  ```powershell
+  irm https://raw.githubusercontent.com/samuelcon41/lg-monitor-app-remover/main/Remove-LGMonitorAdware.ps1 -OutFile "$env:USERPROFILE\Downloads\Remove-LGMonitorAdware.ps1"
+  ```
+
+> ⚠️ **Don't pipe it straight to `iex`** (`irm … | iex`). The script self-elevates using its own file path, which is empty when piped — so the UAC re-launch silently fails. Always save it as a `.ps1` file and run it with `-File`, as shown below.
+
+---
+
 ## Usage
 
-1. Download `Remove-LGMonitorAdware.ps1`.
+1. Download `Remove-LGMonitorAdware.ps1` (see [Download](#download) above).
 2. Open **PowerShell** (a normal, non‑admin window is fine — the script elevates itself).
 3. **Check first (makes no changes):**
    ```powershell
