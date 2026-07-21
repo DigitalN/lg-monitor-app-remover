@@ -1,0 +1,15 @@
+# Logs / script output
+*.log
+block-lg-result.txt
+
+# Windows
+Thumbs.db
+Desktop.ini
+$RECYCLE.BIN/
+
+# macOS (in case the repo is cloned/edited there)
+.DS_Store
+
+# Editor cruft
+.vscode/
+*.swp
