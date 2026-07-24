@@ -120,9 +120,9 @@ Run these in an **elevated** PowerShell:
 Get-AppxPackage -AllUsers *LGMonitor* | Remove-AppxPackage -AllUsers
 Get-AppxProvisionedPackage -Online | Where-Object DisplayName -match LGMonitor | Remove-AppxProvisionedPackage -Online
 
-# 2. Find + delete the LG driver hooks (note the oemNN.inf names shown)
-pnputil /enum-drivers | Select-String -Context 0,4 lgmonitor
-pnputil /delete-driver oemXX.inf /uninstall /force   # repeat for each match
+# 2. Find + delete the LG driver hooks (note the oemNN.inf names shown; Published Name is the oemNN.inf)
+pnputil /enum-drivers | Select-String -Context 1,4 lgmonitor
+pnputil /delete-driver oemXX.inf /force   # repeat for each match. NOTE: /force is IGNORED if you add /uninstall
 
 # 3. Block reinstall
 New-Item 'HKLM:\SOFTWARE\Policies\Microsoft\Windows\Device Metadata' -Force | Out-Null
@@ -132,6 +132,45 @@ New-ItemProperty 'HKLM:\SOFTWARE\Policies\Microsoft\Windows\Device Metadata' `
 
 GUI alternative for the block: `gpedit.msc` → Computer Configuration → Administrative Templates →
 System → Device Installation → **Prevent device metadata retrieval from the Internet** → Enabled.
+
+---
+
+## If the driver won't delete (`deleted successfully` but it's still listed)
+
+On some machines `pnputil /delete-driver oemNN.inf /force` prints **`Driver package deleted successfully`** —
+yet the package is still there after a reboot, and `pnputil /enum-drivers` keeps listing it. This is a
+known, specific case, and it is **not** a failure of the part of the cleanup that matters.
+
+**What's happening:** if the LG extension driver arrived through **Windows Update** (rather than from
+plugging the monitor in), the servicing stack (**CBS / TrustedInstaller**) *pins* the package. `pnputil`
+and `DISM` manage the third‑party driver store — they report success, but the component store silently
+rolls the deletion back. The tell‑tale sign: `C:\Windows\INF\oemNN.inf` keeps its **original creation
+timestamp**, unchanged to the second, before and after the "successful" delete — the file is never
+actually touched.
+
+**Two gotchas this uncovered:**
+
+- **`pnputil` ignores `/force` when `/uninstall` is also present** (it literally prints
+  *"Ignoring /force when used with /uninstall"*). If a device is holding the package, use
+  `/delete-driver oemNN.inf /force` **without** `/uninstall`.
+- **`Driver package deleted successfully` is not proof of removal.** Verify with
+  `pnputil /enum-drivers` and by checking whether `C:\Windows\INF\oemNN.inf` is actually gone.
+
+**Does it matter? Usually not.** The LG extension only binds to **specific LG monitor hardware IDs**
+(e.g. `Monitor\GSM774A`, `GSM7799`, …). With no matching LG monitor connected, it is **completely
+dormant** — it cannot fire the `AddComponent = LGMonitorApp` trigger. As long as the Store app is removed
+(step 2) and the reinstall‑block policy is set (step 4), a pinned‑but‑inert extension does nothing.
+
+**What to do about it:**
+
+- ✅ **Recommended: leave it.** It's a dead store entry with no way to act on hardware it doesn't match.
+- ❌ **Do NOT** take ownership of `C:\Windows\System32\DriverStore\FileRepository` from TrustedInstaller to
+  hand‑delete the files. That risks corrupting your entire driver store — to remove something already inert.
+- 🔁 **If Windows Update ever re‑pushes the actual app,** use Microsoft's **"Show or hide updates"
+  (wushowhide)** tool to hide the LG monitor driver so WU stops re‑offering it. (The *app* is the problem;
+  the dormant extension isn't.)
+- 🔒 **Own an LG monitor and want a hard guarantee?** Add a **Device Installation Restriction** for the LG
+  *app component* so the extension can never pull the app, while the monitor itself keeps working normally.
 
 ---
 
