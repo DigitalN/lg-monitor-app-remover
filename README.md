@@ -28,8 +28,8 @@ GPU/monitor driver.
 
 | Step | Action |
 |------|--------|
-| **1. Scan** | Reports the LG Store app, provisioned package, LG driver hooks, and any running LG process. |
-| **2. Remove app** | Removes `LGElectronics.LGMonitorApp` for all users **and** deprovisions it so new accounts don't get re‑seeded. |
+| **1. Scan** | Reports any LG Store apps, provisioned packages, LG driver hooks, and any running LG process. |
+| **2. Remove apps** | Removes **every** LG Electronics Store app (anything named `LGElectronics.*` or `*LGMonitor*`, including `LGElectronics.LGMonitorApp`) for all users **and** deprovisions them so new accounts don't get re‑seeded. This is deliberately broad: no LG app is kept. |
 | **3. Delete driver hooks** | Finds and deletes the LG *software‑component* + *extension* driver packages (`oemNN.inf`) that re‑trigger the install. Discovered **dynamically** — the numbers differ on every PC. |
 | **4. Block reinstall** | Sets policy `PreventDeviceMetadataFromNetwork = 1` so Windows won't auto‑download companion apps for hardware. |
 | **5. Verify** | Re‑checks everything and prints a clean / not‑clean summary. |
@@ -42,14 +42,16 @@ policy that would otherwise re‑fetch it.
 ## Requirements
 
 - Windows 10 or 11
-- Windows PowerShell 5.1 (built in) — Windows PowerShell or PowerShell 7 both work
+- Windows PowerShell 5.1 (built into every Windows 10/11 PC). You can start the script from PowerShell 7,
+  but it re‑runs itself in Windows PowerShell 5.1, because the Store app commands don't load reliably in
+  PowerShell 7 and the scan could otherwise miss installed apps.
 - Administrator rights (the script **self‑elevates** with a UAC prompt)
 
 ---
 
 ## Download
 
-[**⬇ Download the latest release**](https://github.com/samuelcon41/lg-monitor-app-remover/releases/latest) — grab `Remove-LGMonitorAdware.ps1` from the **Assets** list.
+[**⬇ Download the script**](https://raw.githubusercontent.com/DigitalN/lg-monitor-app-remover/main/Remove-LGMonitorAdware.ps1) (right‑click → **Save link as…** if it opens in the browser).
 
 Other ways to get it:
 
@@ -57,10 +59,10 @@ Other ways to get it:
 - **Just the script:** open [`Remove-LGMonitorAdware.ps1`](Remove-LGMonitorAdware.ps1) and click the **Download raw file** icon (top-right of the file view).
 - **From PowerShell:**
   ```powershell
-  irm https://raw.githubusercontent.com/samuelcon41/lg-monitor-app-remover/main/Remove-LGMonitorAdware.ps1 -OutFile "$env:USERPROFILE\Downloads\Remove-LGMonitorAdware.ps1"
+  irm https://raw.githubusercontent.com/DigitalN/lg-monitor-app-remover/main/Remove-LGMonitorAdware.ps1 -OutFile "$env:USERPROFILE\Downloads\Remove-LGMonitorAdware.ps1"
   ```
 
-> ⚠️ **Don't pipe it straight to `iex`** (`irm … | iex`). The script self-elevates using its own file path, which is empty when piped — so the UAC re-launch silently fails. Always save it as a `.ps1` file and run it with `-File`, as shown below.
+> ⚠️ **Don't pipe it straight to `iex`** (`irm … | iex`). The script relaunches itself using its own file path, which is empty when piped. If you try, it stops and shows the correct commands. Always save it as a `.ps1` file and run it with `-File`, as shown below.
 
 ---
 
@@ -88,6 +90,14 @@ Other ways to get it:
 |------|--------|
 | `-ScanOnly` | Report what's present and exit. Makes **no** changes. |
 | `-SkipMetadataPolicy` | Remove the app + driver hooks, but **don't** set the metadata‑download policy (keeps Windows' auto‑download of device companion apps enabled). |
+
+### Log files
+
+Every run saves a log in the **same folder as the script**, for example
+`LGMonitorRemover_scan_2026-10-01_142530.log` or `LGMonitorRemover_clean_2026-10-01_142812.log`.
+It holds everything shown on screen, plus PowerShell's standard transcript header (PC name, user name,
+PowerShell version). Logs stay on your PC. Nothing is uploaded, and the script makes no network
+connections. If the folder isn't writable, the script says so and carries on without a log.
 
 ---
 
@@ -191,6 +201,24 @@ dormant** — it cannot fire the `AddComponent = LGMonitorApp` trigger. As long 
 Provided **as‑is, without warranty of any kind**. It modifies system state (removes an app, deletes
 driver packages, sets a policy). Review the script before running it and use it at your own risk. See
 [LICENSE](LICENSE).
+
+---
+
+## Credits
+
+This is a fork of [**samuelcon41/lg-monitor-app-remover**](https://github.com/samuelcon41/lg-monitor-app-remover)
+by Sam, who wrote the original script and documentation, including the research in
+[If the driver won't delete](#if-the-driver-wont-delete-deleted-successfully-but-its-still-listed).
+The original copyright notice is kept in [LICENSE](LICENSE) as the MIT license requires.
+
+Changes in this fork:
+
+- Driver deletion retries with `/force` on its own when `/uninstall` fails (pnputil ignores `/force` when
+  both are given).
+- Always runs in Windows PowerShell 5.1, relaunching itself if started from PowerShell 7.
+- Stops with a clear message when piped into `iex` instead of failing silently.
+- Writes a log file next to the script on every run.
+- Download links point to this fork.
 
 ---
 

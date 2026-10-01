@@ -9,15 +9,20 @@
     the display is connected. Recent builds pop McAfee trial ads and the app declares
     "uses all system resources". This script:
       1. Reports any LG monitor app / driver hooks / running LG processes it finds.
-      2. Removes the LGMonitorApp Store app (current user, all users, and provisioned).
+      2. Removes every LG Electronics Store app, including LGMonitorApp (all users
+         and provisioned). The match is deliberately broad: no LG app is kept.
       3. Deletes the LG "software component" + "extension" driver packages that
          re-trigger the install (found dynamically, not hardcoded).
       4. Sets policy PreventDeviceMetadataFromNetwork=1 so Windows won't auto-fetch
          companion apps for new hardware. (Skip with -SkipMetadataPolicy.)
       5. Re-verifies and prints a summary.
 
-    The script self-elevates (UAC prompt). It does NOT touch the display driver, so
-    the monitor keeps working normally.
+    The script self-elevates (UAC prompt) and always runs in Windows PowerShell 5.1,
+    relaunching itself if started from PowerShell 7. It does NOT touch the display
+    driver, so the monitor keeps working normally.
+
+    Each run writes a log file next to the script:
+    LGMonitorRemover_<scan|clean>_<date>_<time>.log. Nothing is sent anywhere.
 
 .PARAMETER ScanOnly
     Report what's present and exit. Makes no changes. (No admin needed for a basic scan,
@@ -45,20 +50,54 @@ function Write-Good($t)    { Write-Host "  [OK]  $t" -ForegroundColor Green }
 function Write-Warn2($t)   { Write-Host "  [!]   $t" -ForegroundColor Yellow }
 function Write-Info($t)    { Write-Host "  [i]   $t" -ForegroundColor Gray }
 
-# ---- Self-elevate ----
+# ---- Must run from a saved .ps1 file ----
+# Relaunching (for UAC or Windows PowerShell) needs the script's own path, which is
+# empty when the script is piped into Invoke-Expression (irm ... | iex).
+if (-not $PSCommandPath) {
+    Write-Host "This script can't run when piped into iex. Save it as a .ps1 file and run it with -File:" -ForegroundColor Red
+    Write-Host '  irm https://raw.githubusercontent.com/DigitalN/lg-monitor-app-remover/main/Remove-LGMonitorAdware.ps1 -OutFile .\Remove-LGMonitorAdware.ps1' -ForegroundColor Gray
+    Write-Host '  powershell -ExecutionPolicy Bypass -File .\Remove-LGMonitorAdware.ps1' -ForegroundColor Gray
+    return
+}
+
+# ---- Relaunch elevated, in Windows PowerShell 5.1 ----
+# The Appx cmdlets can fail to load in PowerShell 7, and with errors silenced the scan
+# would then miss installed apps. Windows PowerShell 5.1 ships with every Win 10/11 PC.
+$winPS = Join-Path $env:SystemRoot 'System32\WindowsPowerShell\v1.0\powershell.exe'
+$fwd = @()
+if ($ScanOnly)           { $fwd += '-ScanOnly' }
+if ($SkipMetadataPolicy) { $fwd += '-SkipMetadataPolicy' }
+
 $id = [Security.Principal.WindowsIdentity]::GetCurrent()
 $isAdmin = (New-Object Security.Principal.WindowsPrincipal($id)).IsInRole([Security.Principal.WindowsBuiltinRole]::Administrator)
 if (-not $isAdmin) {
     Write-Host "Requesting administrator rights (approve the UAC prompt)..." -ForegroundColor Yellow
-    $argList = @('-NoProfile','-ExecutionPolicy','Bypass','-File', "`"$PSCommandPath`"")
-    if ($ScanOnly)            { $argList += '-ScanOnly' }
-    if ($SkipMetadataPolicy)  { $argList += '-SkipMetadataPolicy' }
+    $argList = @('-NoProfile','-ExecutionPolicy','Bypass','-File', "`"$PSCommandPath`"") + $fwd
     try {
-        Start-Process powershell.exe -Verb RunAs -ArgumentList $argList -ErrorAction Stop
+        Start-Process $winPS -Verb RunAs -ArgumentList $argList -ErrorAction Stop
     } catch {
         Write-Host "Elevation was declined. Re-run and approve the UAC prompt to make changes." -ForegroundColor Red
     }
     return
+}
+if ($PSVersionTable.PSEdition -eq 'Core') {
+    Write-Host "Re-running in Windows PowerShell 5.1 (needed for the Store app cmdlets)..." -ForegroundColor Yellow
+    & $winPS -NoProfile -ExecutionPolicy Bypass -File $PSCommandPath @fwd
+    return
+}
+
+# ---- Log file next to the script ----
+$mode    = if ($ScanOnly) { 'scan' } else { 'clean' }
+$logPath = Join-Path $PSScriptRoot ('LGMonitorRemover_{0}_{1}.log' -f $mode, (Get-Date -Format 'yyyy-MM-dd_HHmmss'))
+$logging = $false
+try { Start-Transcript -Path $logPath -ErrorAction Stop | Out-Null; $logging = $true }
+catch { Write-Host ("Could not create log file {0}: {1}. Continuing without a log." -f $logPath, $_.Exception.Message) -ForegroundColor Yellow }
+
+function Stop-Log {
+    if ($logging) {
+        Stop-Transcript | Out-Null
+        Write-Host "Log saved: $logPath" -ForegroundColor Gray
+    }
 }
 
 Write-Host "LG Monitor App adware removal  --  $([Environment]::MachineName)" -ForegroundColor White
@@ -72,7 +111,7 @@ Write-Section "Scan"
 $app = Get-AppxPackage -AllUsers -ErrorAction SilentlyContinue |
         Where-Object { $_.Name -match 'LGElectronics|LGMonitor' }
 if ($app) { $app | ForEach-Object { Write-Warn2 ("Store app present: {0}" -f $_.PackageFullName) } }
-else      { Write-Good "No LG Monitor Store app installed." }
+else      { Write-Good "No LG Store apps installed." }
 
 $prov = Get-AppxProvisionedPackage -Online -ErrorAction SilentlyContinue |
         Where-Object { $_.DisplayName -match 'LGElectronics|LGMonitor' }
@@ -100,6 +139,7 @@ else       { Write-Good "No running LG-signed processes." }
 
 if ($ScanOnly) {
     Write-Host "`nScan complete (no changes made). Re-run without -ScanOnly to clean." -ForegroundColor Cyan
+    Stop-Log
     if ($Host.Name -eq 'ConsoleHost') { Read-Host "`nPress Enter to close" }
     return
 }
@@ -164,7 +204,7 @@ if ($SkipMetadataPolicy) {
 # ---------------------------------------------------------------------------
 Write-Section "Verify"
 $appLeft = Get-AppxPackage -AllUsers -ErrorAction SilentlyContinue | Where-Object { $_.Name -match 'LGElectronics|LGMonitor' }
-if ($appLeft) { Write-Warn2 "Store app STILL present." } else { Write-Good "Store app: gone." }
+if ($appLeft) { Write-Warn2 "LG Store app STILL present." } else { Write-Good "LG Store apps: gone." }
 $enum2 = & pnputil.exe /enum-drivers 2>$null | Out-String
 if ($enum2 -match 'lgmonitor') { Write-Warn2 "LG driver package STILL present." } else { Write-Good "Driver hooks: gone." }
 if (-not $SkipMetadataPolicy) {
@@ -172,5 +212,6 @@ if (-not $SkipMetadataPolicy) {
     if ((Test-Path $k) -and (Get-ItemProperty $k).PreventDeviceMetadataFromNetwork -eq 1) { Write-Good "Reinstall-block policy: active." }
 }
 Write-Host "`nDone. A reboot clears any inert 'LG Monitor Support Application' phantom entries. Your monitor is unaffected." -ForegroundColor Cyan
+Stop-Log
 
 if ($Host.Name -eq 'ConsoleHost') { Read-Host "`nPress Enter to close" }
