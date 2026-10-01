@@ -132,7 +132,12 @@ if ($prov) {
 Write-Section "Delete driver hooks"
 if ($lgDrivers) {
     foreach ($d in $lgDrivers) {
-        $out = & pnputil.exe /delete-driver $d.Published /uninstall /force 2>&1 | Out-String
+        # pnputil ignores /force when /uninstall is also given, so try a clean
+        # uninstall first and fall back to /force alone if a device still holds it.
+        $out = & pnputil.exe /delete-driver $d.Published /uninstall 2>&1 | Out-String
+        if ($out -notmatch 'deleted successfully') {
+            $out = & pnputil.exe /delete-driver $d.Published /force 2>&1 | Out-String
+        }
         if ($out -match 'deleted successfully') { Write-Good ("Deleted {0} ({1})" -f $d.Published, $d.Original) }
         else { Write-Warn2 ("{0}: {1}" -f $d.Published, ($out.Trim())) }
     }
